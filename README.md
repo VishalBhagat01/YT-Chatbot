@@ -20,3 +20,23 @@ Chatbot/
 └── faiss_indexes/
 
 
+# Step 2 — Create Virtual Environment
+Windows
+python -m venv venv
+venv\Scripts\activate
+
+macOS / Linux
+python3 -m venv venv
+source venv/bin/activate
+
+# Step 3 — Install Dependencies
+
+
+pip install -r requirements.txt
+
+
+# RUN
+streamlit run streamlit_frontend.py
+
+
+
