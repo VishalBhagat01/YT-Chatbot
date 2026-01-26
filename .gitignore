@@ -2,13 +2,21 @@
 venv/
 .env
 
+# Project Specific
+faiss_indexes/
+
 # Python cache
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
 
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
 # IDE / OS
 .vscode/
 .idea/
 .DS_Store
+*.swp
+*.bak

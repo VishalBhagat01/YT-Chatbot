@@ -7,10 +7,9 @@ from youtube_transcript_api import (
 )
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_google_genai import (
-    ChatGoogleGenerativeAI,
-    GoogleGenerativeAIEmbeddings,
-)
+from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_community.embeddings import HuggingFaceEmbeddings
+
 from dotenv import load_dotenv
 from langchain_community.vectorstores import FAISS
 from langchain_core.prompts import PromptTemplate
@@ -20,7 +19,9 @@ from langchain_core.runnables import (
     RunnableLambda,
 )
 from langchain_core.output_parsers import StrOutputParser
-
+import subprocess
+import tempfile
+import json
 # -------------------------------
 # Setup
 # -------------------------------
@@ -32,36 +33,53 @@ BASE_INDEX_DIR = "faiss_indexes"
 # -------------------------------
 # Transcript
 # -------------------------------
+
 def fetch_transcript(video_id: str, languages=None) -> str:
     if languages is None:
         languages = ["en"]
 
+    # Try YouTubeTranscriptApi first
     try:
-        transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
-
-        # Try preferred languages
-        for lang in languages:
-            try:
-                transcript = transcript_list.find_transcript([lang])
-                return " ".join(item["text"] for item in transcript.fetch())
-            except:
-                pass
-
-        # Fallback: try any available transcript
-        for transcript in transcript_list:
-            try:
-                return " ".join(item["text"] for item in transcript.fetch())
-            except:
-                continue
-
-        raise RuntimeError("No usable transcript found")
-
+        transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=languages)
+        return " ".join([t["text"] for t in transcript_list])
+    except (TranscriptsDisabled, NoTranscriptFound, VideoUnavailable):
+        pass
     except Exception as e:
-        raise RuntimeError(
-            "Transcript could not be fetched. "
-            "This video may be private, age-restricted, region-blocked, "
-            "or does not have captions."
-        ) from e
+        print(f"YouTubeTranscriptApi failed: {e}")
+
+    # Fallback to yt-dlp
+    with tempfile.TemporaryDirectory() as tmpdir:
+        output_template = os.path.join(tmpdir, "%(id)s.%(ext)s")
+
+        cmd = [
+            "yt-dlp",
+            "--skip-download",
+            "--write-auto-subs",
+            "--sub-format", "vtt",
+            "--sub-lang", ",".join(languages),
+            "-o", output_template,
+            f"https://www.youtube.com/watch?v={video_id}",
+        ]
+
+        subprocess.run(cmd, capture_output=True)
+
+        for file in os.listdir(tmpdir):
+            if file.endswith(".vtt"):
+                path = os.path.join(tmpdir, file)
+                with open(path, "r", encoding="utf-8") as f:
+                    lines = f.readlines()
+
+                # Strip timestamps
+                text_lines = [
+                    line.strip()
+                    for line in lines
+                    if line.strip() and "-->" not in line and not line.startswith("WEBVTT")
+                ]
+
+                if text_lines:
+                    return " ".join(text_lines)
+
+    raise RuntimeError(f"Could not extract subtitles from video {video_id}")
 
 
 
@@ -100,9 +118,10 @@ def build_rag_chain(
     # -------------------------------
     # Embeddings
     # -------------------------------
-    embeddings = GoogleGenerativeAIEmbeddings(
-        model="models/embedding-001"
+    embeddings = HuggingFaceEmbeddings(
+        model_name="sentence-transformers/all-MiniLM-L6-v2"
     )
+
 
     # -------------------------------
     # Load or Build Vector Store
@@ -133,7 +152,7 @@ def build_rag_chain(
     # LLM
     # -------------------------------
     model = ChatGoogleGenerativeAI(
-        model="gemini-1.5-flash",
+        model="gemini-2.5-flash",
         temperature=temperature,
     )
 

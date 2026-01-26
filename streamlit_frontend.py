@@ -56,25 +56,26 @@ if build_button:
 if st.session_state.rag_chain:
     st.subheader("Chat")
 
-    with st.form("chat_form", clear_on_submit=True):
-        user_input = st.text_input("Ask a question about the video")
-        send_button = st.form_submit_button("Send")
+    # Display chat history
+    for role, message in st.session_state.chat_history:
+        with st.chat_message(role):
+            st.markdown(message)
 
-    if send_button and user_input:
-        with st.spinner("Thinking..."):
+    # Chat input
+    if user_input := st.chat_input("Ask a question about the video"):
+        # Add user message to history
+        st.session_state.chat_history.append(("user", user_input))
+        with st.chat_message("user"):
+            st.markdown(user_input)
+
+        # Generate response
+        with st.chat_message("assistant"):
             try:
-                response = st.session_state.rag_chain.invoke(user_input)
-
-                st.session_state.chat_history.append(("You", user_input))
-                st.session_state.chat_history.append(("Bot", response))
+                # Use st.write_stream to handle the iterator from rag_chain.stream
+                response = st.write_stream(st.session_state.rag_chain.stream(user_input))
+                st.session_state.chat_history.append(("assistant", response))
             except Exception as e:
                 st.error(str(e))
-
-    for role, message in st.session_state.chat_history:
-        if role == "You":
-            st.markdown(f"**You:** {message}")
-        else:
-            st.markdown(f"**Bot:** {message}")
 
 else:
     st.info("Enter a video ID and click 'Build Knowledge Base' to begin.")
