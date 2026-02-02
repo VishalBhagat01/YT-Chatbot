@@ -23,6 +23,7 @@ with st.sidebar:
     rebuild_index = st.checkbox("Force rebuild knowledge base")
 
     build_button = st.button("Build Knowledge Base")
+    reset_chat = st.button("Reset Chat History")
 
 # -------------------------------
 # Session State
@@ -32,6 +33,22 @@ if "rag_chain" not in st.session_state:
 
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
+
+if "current_video_id" not in st.session_state:
+    st.session_state.current_video_id = ""
+
+# -------------------------------
+# Reset Logic
+# -------------------------------
+if reset_chat:
+    st.session_state.chat_history = []
+    st.rerun()
+
+# Auto-reset if video ID changes
+if video_id != st.session_state.current_video_id:
+    st.session_state.chat_history = []
+    st.session_state.rag_chain = None  # Force rebuild for new video
+    st.session_state.current_video_id = video_id
 
 # -------------------------------
 # Build Pipeline

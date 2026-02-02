@@ -7,3 +7,6 @@ python-dotenv
 faiss-cpu
 yt-dlp
 sentence-transformers
+psycopg[binary,pool]
+langchain-postgres
+psycopg2-binary
