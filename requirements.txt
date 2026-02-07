@@ -10,3 +10,4 @@ sentence-transformers
 psycopg[binary,pool]
 langchain-postgres
 psycopg2-binary
+streamlit
