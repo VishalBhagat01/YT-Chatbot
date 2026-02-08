@@ -92,8 +92,6 @@ def format_docs(docs):
     return "\n\n".join(d.page_content for d in docs)
 
 
-# Helper removed as we use PGVector directly
-
 
 # -------------------------------
 # Public API
@@ -114,14 +112,10 @@ def build_rag_chain(
     # -------------------------------
     # Load or Build Vector Store (PostgreSQL)
     # -------------------------------
-    # We use pre_delete_collection=rebuild to handle the rebuild flag.
-    # If not rebuilding, we still need to check if we should add documents.
-    # To keep it simple and robust, we'll fetch the transcript if needed.
-    
+
     collection_name = f"video_{video_id}"
     
-    # We'll use a simple approach: if we can't find the collection or it's rebuild, we build it.
-    # Note: PGVector.from_documents will create the collection if it doesn't exist.
+
     
     if rebuild:
         transcript_text = fetch_transcript(video_id)
@@ -137,7 +131,6 @@ def build_rag_chain(
             pre_delete_collection=True,
         )
     else:
-        # Just initialize the store - it will connect to existing collection if it exists
         vector_store = PGVector(
             embeddings=embeddings,
             collection_name=collection_name,
@@ -145,14 +138,7 @@ def build_rag_chain(
             use_jsonb=True,
         )
         
-        # Optional: Check if empty and build? 
-        # For simplicity, we'll assume if not rebuild, the user expects it to be there 
-        # or they will trigger a rebuild if chat fails.
-        # However, to be user-friendly, let's auto-build if no docs found.
-        # But checking count in PGVector is slightly involved.
-        # Let's try to add documents ONLY if it's the first time for this video.
-        # We can do this by trying to fetch transcript and adding if needed.
-        # But for now, sticking to the standard pattern.
+
 
     # -------------------------------
     # Retriever

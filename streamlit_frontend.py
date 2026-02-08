@@ -1,7 +1,6 @@
 import traceback
 import streamlit as st
 
-# Import build_rag_chain but capture import errors so the UI can show them
 build_rag_chain = None
 build_import_error = None
 try:
@@ -20,7 +19,6 @@ st.set_page_config(
 st.title("YouTube RAG Chatbot")
 st.markdown("Ask questions about any YouTube video using Gemini")
 
-# If importing the backend failed, surface the error to the user and stop
 if build_import_error:
     st.error("Failed to import backend (app.py). See traceback below:")
     st.code(build_import_error)
@@ -61,7 +59,7 @@ if reset_chat:
 # Auto-reset if video ID changes
 if video_id != st.session_state.current_video_id:
     st.session_state.chat_history = []
-    st.session_state.rag_chain = None  # Force rebuild for new video
+    st.session_state.rag_chain = None  
     st.session_state.current_video_id = video_id
 
 # -------------------------------
@@ -104,7 +102,6 @@ if st.session_state.rag_chain:
             try:
                 rag = st.session_state.rag_chain
 
-                # If the chain exposes a streaming iterator, render tokens as they arrive
                 if hasattr(rag, "stream"):
                     placeholder = st.empty()
                     response_text = ""
