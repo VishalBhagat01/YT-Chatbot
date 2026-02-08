@@ -1,5 +1,13 @@
+import traceback
 import streamlit as st
-from app import build_rag_chain
+
+# Import build_rag_chain but capture import errors so the UI can show them
+build_rag_chain = None
+build_import_error = None
+try:
+    from app import build_rag_chain
+except Exception:
+    build_import_error = traceback.format_exc()
 
 # -------------------------------
 # Page Setup
@@ -12,12 +20,18 @@ st.set_page_config(
 st.title("YouTube RAG Chatbot")
 st.markdown("Ask questions about any YouTube video using Gemini")
 
+# If importing the backend failed, surface the error to the user and stop
+if build_import_error:
+    st.error("Failed to import backend (app.py). See traceback below:")
+    st.code(build_import_error)
+    st.stop()
+
 # -------------------------------
 # Sidebar
 # -------------------------------
 with st.sidebar:
     st.header("Configuration")
-    video_id = st.text_input("YouTube Video ID", value="Gfr50f6ZBvo")
+    video_id = st.text_input("YouTube Video ID", value="1aA1WGON49E")
     k_results = st.slider("Retrieved Chunks (k)", 1, 8, 4)
     temperature = st.slider("Model Temperature", 0.0, 1.0, 0.2)
     rebuild_index = st.checkbox("Force rebuild knowledge base")
@@ -88,9 +102,28 @@ if st.session_state.rag_chain:
         # Generate response
         with st.chat_message("assistant"):
             try:
-                # Use st.write_stream to handle the iterator from rag_chain.stream
-                response = st.write_stream(st.session_state.rag_chain.stream(user_input))
-                st.session_state.chat_history.append(("assistant", response))
+                rag = st.session_state.rag_chain
+
+                # If the chain exposes a streaming iterator, render tokens as they arrive
+                if hasattr(rag, "stream"):
+                    placeholder = st.empty()
+                    response_text = ""
+                    for token in rag.stream(user_input):
+                        response_text += str(token)
+                        placeholder.markdown(response_text)
+                else:
+                    # Fallback: try common call patterns
+                    try:
+                        result = rag.run(user_input)
+                    except Exception:
+                        try:
+                            result = rag(user_input)
+                        except Exception as e:
+                            raise
+                    response_text = str(result)
+                    st.markdown(response_text)
+
+                st.session_state.chat_history.append(("assistant", response_text))
             except Exception as e:
                 st.error(str(e))
 
