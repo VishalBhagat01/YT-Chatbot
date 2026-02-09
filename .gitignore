@@ -1,6 +1,7 @@
 # Virtual Environment
 venv/
 .env
+.streamlit/secrets.toml
 
 # Project Specific
 faiss_indexes/
