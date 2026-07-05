@@ -3,6 +3,8 @@ venv/
 .env
 .streamlit/secrets.toml
 
+devcontainer.json
+devcontainer/
 # Project Specific
 faiss_indexes/
 

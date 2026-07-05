@@ -24,6 +24,21 @@ if build_import_error:
     st.code(build_import_error)
     st.stop()
 
+
+def _extract_text(result):
+    """Normalize LangChain/model outputs to plain text for UI rendering."""
+    if result is None:
+        return ""
+
+    # LangChain AIMessage-style responses
+    if hasattr(result, "content"):
+        content = getattr(result, "content")
+        if isinstance(content, list):
+            return "".join(str(part) for part in content)
+        return str(content)
+
+    return str(result)
+
 # -------------------------------
 # Sidebar
 # -------------------------------
@@ -102,23 +117,16 @@ if st.session_state.rag_chain:
             try:
                 rag = st.session_state.rag_chain
 
-                if hasattr(rag, "stream"):
-                    placeholder = st.empty()
-                    response_text = ""
-                    for token in rag.stream(user_input):
-                        response_text += str(token)
-                        placeholder.markdown(response_text)
+                # Use invoke path for stability across provider SDK versions.
+                if hasattr(rag, "invoke"):
+                    result = rag.invoke(user_input)
+                elif hasattr(rag, "run"):
+                    result = rag.run(user_input)
                 else:
-                    # Fallback: try common call patterns
-                    try:
-                        result = rag.run(user_input)
-                    except Exception:
-                        try:
-                            result = rag(user_input)
-                        except Exception as e:
-                            raise
-                    response_text = str(result)
-                    st.markdown(response_text)
+                    result = rag(user_input)
+
+                response_text = _extract_text(result)
+                st.markdown(response_text)
 
                 st.session_state.chat_history.append(("assistant", response_text))
             except Exception as e:

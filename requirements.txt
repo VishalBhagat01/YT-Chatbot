@@ -1,6 +1,7 @@
 youtube-transcript-api
 langchain-core
 langchain-community
+langchain-huggingface
 langchain-text-splitters
 langchain-google-genai
 python-dotenv

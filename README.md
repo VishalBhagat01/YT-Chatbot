@@ -58,7 +58,7 @@ A powerful **Retrieval-Augmented Generation (RAG)** chatbot that allows you to "
 
 1. **Run the Streamlit app**:
    ```bash
-   streamlit run streamlit_frontend.py
+streamlit run streamlit_frontend.py
    ```
 
 2. **In the browser**:

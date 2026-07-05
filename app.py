@@ -8,7 +8,7 @@ from youtube_transcript_api import (
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 
 from dotenv import load_dotenv
 from langchain_postgres import PGVector
@@ -22,6 +22,9 @@ from langchain_core.output_parsers import StrOutputParser
 import subprocess
 import tempfile
 import json
+import psycopg
+import shutil
+import sys
 # -------------------------------
 # Setup
 # -------------------------------
@@ -42,23 +45,59 @@ if DATABASE_URL and DATABASE_URL.startswith("postgres://"):
 
 def fetch_transcript(video_id: str, languages=None) -> str:
     if languages is None:
-        languages = ["en"]
+        languages = ["en", "en-US", "en-GB", "hi", "hi-IN"]
 
-    # Try YouTubeTranscriptApi first
+    # Try direct transcript request first
     try:
         transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=languages)
-        return " ".join([t["text"] for t in transcript_list])
+        text = " ".join([t["text"] for t in transcript_list]).strip()
+        if text:
+            return text
     except (TranscriptsDisabled, NoTranscriptFound, VideoUnavailable):
         pass
     except Exception as e:
         print(f"YouTubeTranscriptApi failed: {e}")
 
+    # Try listing available transcripts and selecting a best candidate.
+    try:
+        transcript_list = YouTubeTranscriptApi.list_transcripts(video_id)
+        candidates = []
+
+        for lang in languages:
+            try:
+                candidates.append(transcript_list.find_transcript([lang]))
+            except Exception:
+                pass
+            try:
+                candidates.append(transcript_list.find_generated_transcript([lang]))
+            except Exception:
+                pass
+
+        # Fallback to any available transcript.
+        if not candidates:
+            try:
+                candidates = list(transcript_list)
+            except Exception:
+                candidates = []
+
+        for t in candidates:
+            try:
+                data = t.fetch()
+                text = " ".join([item["text"] for item in data]).strip()
+                if text:
+                    return text
+            except Exception:
+                continue
+    except Exception as e:
+        print(f"Transcript listing failed: {e}")
+
     # Fallback to yt-dlp
+    ytdlp_cmd = ["yt-dlp"] if shutil.which("yt-dlp") else [sys.executable, "-m", "yt_dlp"]
+
     with tempfile.TemporaryDirectory() as tmpdir:
         output_template = os.path.join(tmpdir, "%(id)s.%(ext)s")
 
-        cmd = [
-            "yt-dlp",
+        cmd = ytdlp_cmd + [
             "--skip-download",
             "--write-auto-subs",
             "--sub-format", "vtt",
@@ -67,7 +106,11 @@ def fetch_transcript(video_id: str, languages=None) -> str:
             f"https://www.youtube.com/watch?v={video_id}",
         ]
 
-        subprocess.run(cmd, capture_output=True)
+        completed = subprocess.run(cmd, capture_output=True, text=True)
+        if completed.returncode != 0:
+            raise RuntimeError(
+                f"yt-dlp failed to fetch subtitles: {completed.stderr.strip() or completed.stdout.strip()}"
+            )
 
         for file in os.listdir(tmpdir):
             if file.endswith(".vtt"):
@@ -85,7 +128,10 @@ def fetch_transcript(video_id: str, languages=None) -> str:
                 if text_lines:
                     return " ".join(text_lines)
 
-    raise RuntimeError(f"Could not extract subtitles from video {video_id}")
+    raise RuntimeError(
+        f"Could not extract subtitles from video {video_id}. "
+        "Try another video ID or enable subtitles for this video."
+    )
 
 
 
@@ -94,6 +140,32 @@ def fetch_transcript(video_id: str, languages=None) -> str:
 # -------------------------------
 def format_docs(docs):
     return "\n\n".join(d.page_content for d in docs)
+
+
+def _collection_has_embeddings(collection_name: str) -> bool:
+    """Return True if the PGVector collection exists and has at least one chunk."""
+    if not DATABASE_URL:
+        return False
+
+    try:
+        with psycopg.connect(DATABASE_URL) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM langchain_pg_embedding e
+                    JOIN langchain_pg_collection c
+                      ON e.collection_id = c.uuid
+                    WHERE c.name = %s
+                    """,
+                    (collection_name,),
+                )
+                row = cur.fetchone()
+                return bool(row and row[0] and row[0] > 0)
+    except Exception:
+        # If tables are not initialized yet (or DB temporarily unavailable),
+        # treat as empty so the caller can attempt a rebuild path.
+        return False
 
 
 
@@ -118,10 +190,10 @@ def build_rag_chain(
     # -------------------------------
 
     collection_name = f"video_{video_id}"
-    
 
-    
-    if rebuild:
+    should_rebuild = rebuild or not _collection_has_embeddings(collection_name)
+
+    if should_rebuild:
         transcript_text = fetch_transcript(video_id)
         splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
         docs = splitter.create_documents([transcript_text])
@@ -132,7 +204,7 @@ def build_rag_chain(
             collection_name=collection_name,
             connection=DATABASE_URL,
             use_jsonb=True,
-            pre_delete_collection=True,
+            pre_delete_collection=rebuild,
         )
     else:
         vector_store = PGVector(
